@@ -14,8 +14,10 @@
 
 # ValueError: Failed to convert a NumPy array to a Tensor (Unsupported object type float).
 
-# previously it was numpy == 2.35.5, scipy == 1.12.0
+# 1.23.5
+# previously it was numpy == 1.23.5, scipy == 1.12.0
 # now it is numpy == 1.19.5, scipy == 1.6.3
+# tensorflow 2.5.0
 #
 
 # based on validation df (training) and lets use validation df2 as validation (even though it is testing)
@@ -49,7 +51,7 @@ def get_df(file_name, features_col):
 
 # get training and validation df on selected features
 features = ['EAR Avg', 'MAR', 'Head Rot X', 'Head Rot Y', 'Blink Rate']
-df_train = get_df('validation_df.csv', features)
+df_train = get_df('validation_df2.csv', features)
 df_valid = get_df('new_validation_df2.csv', features)
 print(df_train.shape); print(df_valid.shape)
 
@@ -59,43 +61,6 @@ scaled_features = pd.DataFrame(scaler.transform(df_train[features]), columns=fea
 train = pd.concat([scaled_features, df_train.drop(features,axis=1)], axis=1)
 scaled_features = pd.DataFrame(scaler.transform(df_valid[features]), columns=features)
 valid = pd.concat([scaled_features, df_valid.drop(features,axis=1)], axis=1)
-
-# Constants for the RNN
-BATCH_SIZE = 128
-SEQ_SIZE = 5
-
-from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
-# from tensorflow.keras.preprocessing import timeseries_dataset_from_array
-
-def df_to_generator(df_scaled):
-    """
-    This function takes a scaled DataFrame and separates the source and target variables into separate DataFrames,
-    it also creates an object instance that represents both of the variables into a sequence of size SEQ_SIZE.
-
-    :param pd.DataFrame df: Scaled DataFrame with source and target variables.
-    :return (pd.DataFrame, pd.DataFrame, tf.keras.preprocessing.timeseries_dataset_from_array): Separated DataFrames
-    depending on whether they have source or target variables, and a generator to train the RNN.
-    """
-
-    acc = ['State_0', 'State_1', 'State_2', 'State_3', 'State_4']
-    df_output = df_scaled[acc]
-
-    df_scaled.drop(acc, inplace=True, axis=1)
-    n_features = df_scaled.shape[1]
-
-    df_generator = TimeseriesGenerator(data=np.array(df_scaled), targets=np.array(df_output),
-                                       length=SEQ_SIZE, batch_size=n_features)
-    # df_generator = timeseries_dataset_from_array(data=np.array(np.array(df)),
-    #                                              targets=np.array(df_output), sequence_length=SEQ_SIZE)
-
-    return df_scaled, df_output, df_generator
-
-train_scaled, train_output, train_generator = df_to_generator(train)
-valid_scaled, valid_output, valid_generator = df_to_generator(valid)
-
-# model = tf.keras.models.load_model('saved_models/catcross_E1000_S5_B128.h5')
-# pd.DataFrame(model.predict(train_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_train.csv')
-# pd.DataFrame(model.predict(valid_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_test.csv')
 
 # Imports tensorflow library, which has deep learning function to build and train a Recurrent Neural Network, further
 # code also sets up a GPU with 2GB as a virtual device for faster training, in case the user has one physical GPU.
@@ -141,14 +106,15 @@ def create_model(model_type, loss_func, model_name=None):
     loss = tf.keras.losses.CategoricalCrossentropy()
 
     rnn.compile(loss=loss, metrics=METRICS.keys(),
-                optimizer=tf.keras.optimizers.Adam(learning_rate=0.000005))
+                optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005)) # it used to be 0.000005
     print(rnn.summary())
     history = rnn.fit(train_generator, validation_data=valid_generator, shuffle=False,
                       epochs=EPOCH, verbose=2, batch_size=BATCH_SIZE)
     # callbacks=[tf.keras.callbacks.EarlyStopping(monitor="loss", patience=5)
 
     if model_name is not None:
-        rnn.save('saved_models/{}_E{}_S{}_B{}.h5'.format(model_name, EPOCH, SEQ_SIZE, BATCH_SIZE))
+        # rnn.save('saved_models/{}_E{}_S{}_B{}.h5'.format(model_name, EPOCH, SEQ_SIZE, BATCH_SIZE))
+        rnn.save('{}/model.h5'.format(results_folder_name))
 
     hist = pd.DataFrame(history.history)
     hist['epoch'] = history.epoch
@@ -163,29 +129,82 @@ def create_model(model_type, loss_func, model_name=None):
         plt.plot(hist['epoch'], hist[metric], label='Training')
         plt.plot(hist['epoch'], hist['val_' + metric], label='Validation')
         plt.legend()
-        metrics_fig.savefig('{}/figures/{}_E-{}.png'.format(results_folder_name, encoded_name, metric.lower()))
+        metrics_fig.savefig('{}/figures/E-{}.png'.format(results_folder_name, metric.lower()))
 
     return rnn
 
-# The following chunks of code represents two ways a RNN model could be generated, either by CREATING or IMPORTING,
-# please comment or uncomment the lines of code depending on the desired outcome.
+def df_to_generator(df_scaled):
+    """
+    This function takes a scaled DataFrame and separates the source and target variables into separate DataFrames,
+    it also creates an object instance that represents both of the variables into a sequence of size SEQ_SIZE.
 
-N_FEATURES = train_scaled.shape[1]
-METRICS = {'mae': 'Mean Absolute Error (MAE)', 'mse': 'Mean Squared Error (MSE)',
-           'msle': 'Mean Squared Logarithmic Error (MSLE)'}
-EPOCH = 200; SEED = 1; model_type = 'LSTM'
-os.environ['PYTHONHASHSEED'] = str(SEED)
-random.seed(SEED)
-np.random.seed(SEED)
-tf.random.set_seed(SEED)
-# tf.config.experimental.enable_op_determinism()
+    :param pd.DataFrame df: Scaled DataFrame with source and target variables.
+    :return (pd.DataFrame, pd.DataFrame, tf.keras.preprocessing.timeseries_dataset_from_array): Separated DataFrames
+    depending on whether they have source or target variables, and a generator to train the RNN.
+    """
 
-# create a results_folder_name path
-results_folder_name = '{}_E{}_B{}_S{}_SE{}'.format(model_type, EPOCH, BATCH_SIZE, SEQ_SIZE, SEED)
-if not os.path.exists(results_folder_name):
-    os.mkdir(results_folder_name)
-    os.mkdir(results_folder_name + '/figures')
-    os.mkdir(results_folder_name + '/csv')
+    acc = ['State_0', 'State_1', 'State_2', 'State_3', 'State_4']
+    df_output = df_scaled[acc]
 
-loss_function = 'MAE'; sampling_method = 'up'
-create_model(model_type, loss_function, 'catcross')
+    df_scaled = df_scaled.drop(acc, axis=1)
+    n_features = df_scaled.shape[1]
+
+    df_generator = TimeseriesGenerator(data=np.array(df_scaled), targets=np.array(df_output),
+                                       length=SEQ_SIZE, batch_size=n_features)
+    # df_generator = timeseries_dataset_from_array(data=np.array(np.array(df)),
+    #                                              targets=np.array(df_output), sequence_length=SEQ_SIZE)
+
+    return df_scaled, df_output, df_generator
+
+
+
+
+from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
+# from tensorflow.keras.preprocessing import timeseries_dataset_from_array
+
+# Constants for the RNN
+BATCH_SIZE = 128
+model_type = 'LSTM'
+EPOCH = 30
+# 16.67 is 1 second
+# 33 2
+# 50 3
+# 67 4
+# 250 15
+# 500 30
+
+# states last about 15 seconds, so I guess 15 is the max
+
+
+for SEED in range(2,10):
+    os.environ['PYTHONHASHSEED'] = str(SEED)
+    random.seed(SEED)
+    np.random.seed(SEED)
+    tf.random.set_seed(SEED)
+    # tf.config.experimental.enable_op_determinism()
+
+    for SEQ_SIZE in [1,5,10,20,50,100,150,200]:
+
+        train_scaled, train_output, train_generator = df_to_generator(train)
+        valid_scaled, valid_output, valid_generator = df_to_generator(valid)
+
+        # model = tf.keras.models.load_model('saved_models/catcross_E1000_S5_B128.h5')
+        # pd.DataFrame(model.predict(train_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_train.csv')
+        # pd.DataFrame(model.predict(valid_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_test.csv')
+
+        # The following chunks of code represents two ways a RNN model could be generated, either by CREATING or IMPORTING,
+        # please comment or uncomment the lines of code depending on the desired outcome.
+
+        N_FEATURES = train_scaled.shape[1]
+        METRICS = {'mae': 'Mean Absolute Error (MAE)', 'mse': 'Mean Squared Error (MSE)',
+                   'msle': 'Mean Squared Logarithmic Error (MSLE)'}
+
+        # create a results_folder_name path
+        results_folder_name = '{}_E{}_B{}_S{}_SE{}'.format(model_type, EPOCH, BATCH_SIZE, SEQ_SIZE, SEED)
+        if not os.path.exists(results_folder_name):
+            os.mkdir(results_folder_name)
+            os.mkdir(results_folder_name + '/figures')
+            os.mkdir(results_folder_name + '/csv')
+
+        loss_function = 'MAE'; sampling_method = 'up'
+        create_model(model_type, loss_function, 'catcross')
