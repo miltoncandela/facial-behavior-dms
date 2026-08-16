@@ -65,7 +65,7 @@ valid = pd.concat([scaled_features, df_valid.drop(features,axis=1)], axis=1)
 # Imports tensorflow library, which has deep learning function to build and train a Recurrent Neural Network, further
 # code also sets up a GPU with 2GB as a virtual device for faster training, in case the user has one physical GPU.
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, SimpleRNN, LSTM, GRU
+from tensorflow.keras.layers import Dense, SimpleRNN, LSTM, GRU, Conv1D, GlobalAveragePooling1D, MaxPooling1D, Flatten
 
 def create_model(model_type, loss_func, model_name=None):
     """
@@ -80,12 +80,27 @@ def create_model(model_type, loss_func, model_name=None):
 
     rnn = Sequential()
 
-    layers_dict = {'LSTM': LSTM(8, input_shape=(SEQ_SIZE, N_FEATURES), activation='tanh',recurrent_activation='sigmoid',
+    layers_dict = {'LSTM': LSTM(NEURONS, input_shape=(SEQ_SIZE, N_FEATURES), activation='tanh',recurrent_activation='sigmoid',
                      recurrent_dropout=0, unroll=False, use_bias=True),
-                   'GRU': GRU(8, input_shape=(SEQ_SIZE, N_FEATURES)),
-                   'Simple': SimpleRNN(8, input_shape=(SEQ_SIZE, N_FEATURES))}
+                   'GRU': GRU(NEURONS, input_shape=(SEQ_SIZE, N_FEATURES)),
+                   'Simple': SimpleRNN(NEURONS, input_shape=(SEQ_SIZE, N_FEATURES))}
 
-    rnn.add(layers_dict[model_type])
+    if model_type in ['Simple', 'GRU', 'LSTM']:
+        rnn.add(layers_dict[model_type])
+    elif model_type == 'CNN':
+        rnn.add(Conv1D(NEURONS, 3, activation='relu', padding='same', input_shape=(SEQ_SIZE, N_FEATURES)))
+        rnn.add(MaxPooling1D(2))
+        rnn.add(Conv1D(NEURONS*2, 3, activation='relu', padding='same'))
+        rnn.add(MaxPooling1D(2)); rnn.add(Flatten()) # || rnn.add(GlobalAveragePooling1D())
+        rnn.add(Dense(NEURONS, activation='relu'))
+    elif model_type == 'CNNnopool':
+        rnn.add(Conv1D(NEURONS, 3, activation='relu', padding='same', input_shape=(SEQ_SIZE, N_FEATURES)))
+        rnn.add(Conv1D(NEURONS * 2, 3, activation='relu', padding='same'))
+        rnn.add(Flatten())
+        rnn.add(Dense(NEURONS, activation='relu'))
+    elif model_type == 'CNNsmall':
+        rnn.add(Conv1D(NEURONS, 3, activation='relu', padding='same', input_shape=(SEQ_SIZE, N_FEATURES)))
+        rnn.add(Flatten()) # || rnn.add(GlobalAveragePooling1D())
     rnn.add(Dense(5, activation='softmax'))
 
     # Metrics:
@@ -157,14 +172,11 @@ def df_to_generator(df_scaled):
     return df_scaled, df_output, df_generator
 
 
-
-
 from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator
 # from tensorflow.keras.preprocessing import timeseries_dataset_from_array
 
 # Constants for the RNN
 BATCH_SIZE = 128
-model_type = 'LSTM'
 EPOCH = 30
 # 16.67 is 1 second
 # 33 2
@@ -172,39 +184,39 @@ EPOCH = 30
 # 67 4
 # 250 15
 # 500 30
-
 # states last about 15 seconds, so I guess 15 is the max
 
+for model_type in ['CNN', 'CNNnopool', 'CNNsmall']:
+    for NEURONS in [8]:#[2,4,6,8]:
+        for SEED in range(1, 11):
+            os.environ['PYTHONHASHSEED'] = str(SEED)
+            random.seed(SEED)
+            np.random.seed(SEED)
+            tf.random.set_seed(SEED)
+            # tf.config.experimental.enable_op_determinism()
 
-for SEED in range(2,10):
-    os.environ['PYTHONHASHSEED'] = str(SEED)
-    random.seed(SEED)
-    np.random.seed(SEED)
-    tf.random.set_seed(SEED)
-    # tf.config.experimental.enable_op_determinism()
+            for SEQ_SIZE in [10, 20, 40, 80, 120]: # [33,50,83,167,250]: #[1,5,10,20,40,80,120]: # [1,17,33,50,83,167,250]:
 
-    for SEQ_SIZE in [1,5,10,20,50,100,150,200]:
+                train_scaled, train_output, train_generator = df_to_generator(train)
+                valid_scaled, valid_output, valid_generator = df_to_generator(valid)
 
-        train_scaled, train_output, train_generator = df_to_generator(train)
-        valid_scaled, valid_output, valid_generator = df_to_generator(valid)
+                # model = tf.keras.models.load_model('saved_models/catcross_E1000_S5_B128.h5')
+                # pd.DataFrame(model.predict(train_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_train.csv')
+                # pd.DataFrame(model.predict(valid_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_test.csv')
 
-        # model = tf.keras.models.load_model('saved_models/catcross_E1000_S5_B128.h5')
-        # pd.DataFrame(model.predict(train_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_train.csv')
-        # pd.DataFrame(model.predict(valid_generator), columns=['S0', 'S1', 'S2', 'S3', 'S4']).to_csv('RNN_test.csv')
+                # The following chunks of code represents two ways a RNN model could be generated, either by CREATING or IMPORTING,
+                # please comment or uncomment the lines of code depending on the desired outcome.
 
-        # The following chunks of code represents two ways a RNN model could be generated, either by CREATING or IMPORTING,
-        # please comment or uncomment the lines of code depending on the desired outcome.
+                N_FEATURES = train_scaled.shape[1]
+                METRICS = {'mae': 'Mean Absolute Error (MAE)', 'mse': 'Mean Squared Error (MSE)',
+                           'msle': 'Mean Squared Logarithmic Error (MSLE)'}
 
-        N_FEATURES = train_scaled.shape[1]
-        METRICS = {'mae': 'Mean Absolute Error (MAE)', 'mse': 'Mean Squared Error (MSE)',
-                   'msle': 'Mean Squared Logarithmic Error (MSLE)'}
+                # create a results_folder_name path
+                results_folder_name = 'seqGRU/{}_E{}_B{}_NE{}_S{}_SE{}'.format(model_type, EPOCH, BATCH_SIZE, NEURONS, SEQ_SIZE, SEED)
+                if not os.path.exists(results_folder_name):
+                    os.mkdir(results_folder_name)
+                    os.mkdir(results_folder_name + '/figures')
+                    os.mkdir(results_folder_name + '/csv')
 
-        # create a results_folder_name path
-        results_folder_name = '{}_E{}_B{}_S{}_SE{}'.format(model_type, EPOCH, BATCH_SIZE, SEQ_SIZE, SEED)
-        if not os.path.exists(results_folder_name):
-            os.mkdir(results_folder_name)
-            os.mkdir(results_folder_name + '/figures')
-            os.mkdir(results_folder_name + '/csv')
-
-        loss_function = 'MAE'; sampling_method = 'up'
-        create_model(model_type, loss_function, 'catcross')
+                loss_function = 'MAE'; sampling_method = 'up'
+                create_model(model_type, loss_function, 'catcross')
