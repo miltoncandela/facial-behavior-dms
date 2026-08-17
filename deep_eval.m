@@ -24,28 +24,21 @@ ytrain = ytrain(seq_size+1:end,:); ytest = ytest(seq_size+1:end,:);
 %% instead of evaluating accuracy, we can plot training and validation loss
 % curves by varying sequence length (preferably average across seeds)
 
-model_type = 'LSTM'; epoch = 30; batch_size = 128;
-seqs = [1 5 10 20 50 100 150 200]; nSeqs = length(seqs);
+model_type = 'GRU'; epoch = 30; batch_size = 128; neurons = 8;
+seqs = [5 10 20 40 80 120]; nSeqs = length(seqs);
 cmap = copper(nSeqs);
-cmap = copper(256); cidx = round(rescale(log10(seqs), 1, size(cmap,1)));
-cmap = cmap(cidx, :);
-
-seeds = 1:7; nSeeds = length(seeds);
-
-
-
+seeds = 1:10; nSeeds = length(seeds);
 % cmap = brewermap(nSeqs, 'Blues');
-
 % cmap = brewermap(nSeqs, 'Accent');
 
-figure; hold on;
+fig = figure; fig.Units = 'inches'; fig.Position = [1 1 2.1 2]; hold on;
 for i_seq = 1:nSeqs
     seq = seqs(i_seq);
 
     mall = zeros(epoch, 2, nSeeds);
 
     for seed = seeds
-        folder = [model_type '_E' num2str(epoch) '_B' num2str(batch_size) '_S' num2str(seq) '_SE' num2str(seed)];
+        folder = ['seqGRU/' model_type '_E' num2str(epoch) '_B' num2str(batch_size) '_NE' num2str(neurons) '_S' num2str(seq) '_SE' num2str(seed)];
         df = readtable([folder '/csv/history.csv']);
         
         m = df{:,{'loss', 'val_loss'}};
@@ -61,4 +54,4 @@ for i_seq = 1:nSeqs
     fill([evec fliplr(evec)], [mlow(:,2)' fliplr(mhigh(:,2)')], cmap(i_seq,:), 'FaceAlpha', 0.2, 'EdgeColor', 'None', 'HandleVisibility','off')
 end
 hold off;
-legend()
+exportgraphics(fig,['figs/' model_type '_seq.jpg'], 'Resolution', 500)
