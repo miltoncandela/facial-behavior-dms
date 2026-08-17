@@ -101,6 +101,9 @@ def create_model(model_type, loss_func, model_name=None):
     elif model_type == 'CNNsmall':
         rnn.add(Conv1D(NEURONS, 3, activation='relu', padding='same', input_shape=(SEQ_SIZE, N_FEATURES)))
         rnn.add(Flatten()) # || rnn.add(GlobalAveragePooling1D())
+    elif model_type == 'CNNsmall2':
+        rnn.add(Conv1D(NEURONS, 3, activation='relu', padding='same', input_shape=(SEQ_SIZE, N_FEATURES)))
+        rnn.add(MaxPooling1D(2)); rnn.add(Flatten())
     rnn.add(Dense(5, activation='softmax'))
 
     # Metrics:
@@ -186,7 +189,7 @@ EPOCH = 30
 # 500 30
 # states last about 15 seconds, so I guess 15 is the max
 
-for model_type in ['CNNsmall']: # ['CNN', 'CNNnopool', 'CNNsmall']
+for model_type in ['CNNsmall2']: # ['CNN', 'CNNnopool', 'CNNsmall']
     for NEURONS in [8]:#[2,4,6,8]:
         for SEED in range(1, 11):
             os.environ['PYTHONHASHSEED'] = str(SEED)
@@ -195,7 +198,7 @@ for model_type in ['CNNsmall']: # ['CNN', 'CNNnopool', 'CNNsmall']
             tf.random.set_seed(SEED)
             # tf.config.experimental.enable_op_determinism()
 
-            for SEQ_SIZE in [10, 20, 40, 80, 120]: #: # [33,50,83,167,250]: #[1,5,10,20,40,80,120]: # [1,17,33,50,83,167,250]:
+            for SEQ_SIZE in [5,10,20,40,80,120]: #: # [33,50,83,167,250]: #[5,10,20,40,80,120]: # [1,17,33,50,83,167,250]:
 
                 train_scaled, train_output, train_generator = df_to_generator(train)
                 valid_scaled, valid_output, valid_generator = df_to_generator(valid)
